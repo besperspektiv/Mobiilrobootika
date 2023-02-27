@@ -43,4 +43,5 @@ class ImageProcessor:
 
     def show_image(self):
         cv2.imshow(self.window_name, self.mask)
+        return self.mask
 
