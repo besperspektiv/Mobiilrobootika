@@ -1,9 +1,5 @@
 import cv2 as cv
-import imutils
 import numpy as np
-import win32con
-import win32gui
-import win32ui
 from PIL import Image
 from math import atan
 import math
