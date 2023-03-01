@@ -1,6 +1,6 @@
 import cv2
-from capture_window import*
-from utils import ImageProcessor
+from utils import *
+
 list_window_names()
 
 
