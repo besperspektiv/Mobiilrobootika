@@ -19,24 +19,11 @@
 #define default_onState HIGH  //set polarity of the pulses: HIGH is positive, LOW is negative
 #define BUFFSIZE 24
 
-// Variables to hold motor speed
-int variable1 = 1500;
-int variable2 = 1500;
-
-///////////////////// COMMANDS ///////////////////////////////////
-typedef enum { start, attention, command, stream, timeout } state;
-typedef enum { idle, serial_control_write, serial_control_read, 
-        define_startup_val, get_parameter, set_parameter, enable_channel, 
-        disable_channel, system_info_read } command_type;
-
 
 volatile byte _cmdbuffer[BUFFSIZE + 1];
 volatile int _buffindex = 0;
 
 volatile bool onState = default_onState;
-
-volatile int _mode = attention;
-volatile int _commandtype = idle;
 
 volatile int _channel = 0; 
 volatile int _position = 0;
@@ -50,7 +37,7 @@ int ppmDefaultChannelValue[default_channel_number] = {
     1500,  // Channel 1 default value
     1500,  // Channel 2 default value
     1500,  // Channel 3 default value
-    1500,  // Channel 4 default value
+    1500,  // Channel 3 default value
 };
 
 void setup(){  
@@ -72,28 +59,24 @@ void setup(){
   TIMSK1 |= (1 << OCIE1A); // enable timer compare interrupt
   sei();
 
-  Serial.begin(115200);
+  Serial.begin(9600);
 }
-
-
-int a = 1000;
 
 //////////////////////////////////////////  LOOP  ////////////////////////////////////
 void loop(){
-  if (Serial.available() > 0) { // check if there is serial data available to read
-    String data = Serial.readStringUntil('\n'); // read the data until a newline character is received
-    int commaIndex = data.indexOf(','); // find the index of the comma separator
-    if (commaIndex != -1 && data.length() > commaIndex + 1) { // check if the comma separator exists and there is data after it
-      int value1 = data.substring(0, commaIndex).toInt(); // extract the value for variable1
-      int value2 = data.substring(commaIndex + 1).toInt(); // extract the value for variable2
-      // constrain the values to be within the range of 1000 to 2000
-      variable1 = constrain(value1, 1000, 2000);
-      variable2 = constrain(value2, 1000, 2000);
-    }
+  if (Serial.available() >= 12) { // Wait until we have at least 12 bytes available
+    byte buffer[12];
+    Serial.readBytes(buffer, 12);
+
+    int signal1 = *(int*)(buffer);
+    int signal2 = *(int*)(buffer + 4);
+    int signal3 = *(int*)(buffer + 8);
+
+    ppmDefaultChannelValue[3] = signal1;  // Chanel 1 
+    // ppmDefaultChannelValue[1] = signal1;  // Chanel 1
+    // ppmDefaultChannelValue[2] = signal1;  // Chanel 1 
   }
-  
-  ppmDefaultChannelValue[3] = variable1;
-  ppmDefaultChannelValue[1] = variable2;
+    
   for(int i=0; i<channel_number; i++){
     ppm[i]= verifyConstraints(ppmDefaultChannelValue[i]);
   }
