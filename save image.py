@@ -22,21 +22,27 @@ vid.set(cv.CAP_PROP_FRAME_WIDTH, 640)  # Set width to 640
 vid.set(cv.CAP_PROP_FRAME_HEIGHT, 480)  # Set height to 480
 
 
+# Load the cascade classifier
+face_cascade = cv.CascadeClassifier('C:\Users\pikka\PycharmProjects\Mobiilrobootika\data\classifier\cascade.xml')
+
 
 # processor = ImageProcessor("My Image")
 
 while True:
     ret, frame = vid.read()
     frame = cv.rotate(frame, cv.ROTATE_180)
-
-    hsv = cv.cvtColor(frame, cv.COLOR_RGB2HSV)
-    blurred = cv.GaussianBlur(hsv, (5, 5), 0)
-    gray = cv.cvtColor(blurred, cv.COLOR_BGR2GRAY)
-    thresh = cv.threshold(gray, 100, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)[1]
+    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
     # processor.process_image(frame)
     # processor.show_image()
 
-    cv.imshow("image", thresh)
+    # Detect faces in the image using the cascade c lassifier
+    robot = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+
+    # Draw a rectangle around each detected face
+    for (x, y, w, h) in robot:
+        cv.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+    cv.imshow("image", frame)
     # cv.imshow("tresh", thresh)
 
 
