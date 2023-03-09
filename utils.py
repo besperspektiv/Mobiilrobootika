@@ -6,6 +6,7 @@ import win32ui
 from PIL import Image
 import math
 
+
 def camera_init():
     vid = cv2.VideoCapture(1, cv2.CAP_DSHOW)
     # Set camera parameters
@@ -17,6 +18,27 @@ def camera_init():
     vid.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Set width to 640
     vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Set height to 480
     return vid
+
+
+def load_calib_data():
+    # Load the calibration data
+    calib_data = np.load('calibration_data.npz')
+    mtx = calib_data['mtx']
+    dist = calib_data['dist']
+    # Calculate the new camera matrix
+    newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (640, 480), 0, (640, 480))
+    return mtx, dist, newcameramtx, roi
+
+
+def show(frame, mtx, dist, newcameramtx, roi):
+    # Undistort the frame using the calibration data
+    mapx, mapy = cv2.initUndistortRectifyMap(mtx, dist, None, newcameramtx, (640, 480), 5)
+    frame = cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
+    # crop the image
+    x, y, w, h = roi
+    frame = frame[y:y + h, x:x + w]
+
+    return frame
 
 
 def list_window_names():
@@ -75,12 +97,17 @@ def crop_image_from_window(window_name):
 
 
 class ImageProcessor:
-    def __init__(self, window_name):
+    def __init__(self, window_name, enemy=0):
         self.window_name = window_name
-        self.lower = np.array([0, 0, 233])
-        self.upper = np.array([255, 255, 255])
+        if not enemy:
+            self.lower = np.array([0, 0, 237])
+            self.upper = np.array([207, 255, 255])
+        else:
+            self.lower = np.array([0, 49, 202])
+            self.upper = np.array([255, 255, 255])
         self.image = None
         self.mask = None
+        self.hsv = None
         self.create_trackbars()
 
     def process_image(self, image):
@@ -110,8 +137,8 @@ class ImageProcessor:
         self.create_mask()
 
     def create_mask(self):
-        hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
-        self.mask = cv2.inRange(hsv, self.lower, self.upper)
+        self.hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
+        self.mask = cv2.inRange(self.hsv, self.lower, self.upper)
         return self.mask
 
     def show_image(self):
@@ -119,7 +146,7 @@ class ImageProcessor:
         return self.mask
 
 
-def draw_min_rect(mask_image, target_image):
+def draw_min_rect(mask_image, target_image, window_name):
     """ Returns image with drawerd center point of contour and center point of minAreaRect.  """
     # Find contours in the mask image
     contours, hierarchy = cv2.findContours(mask_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -135,7 +162,7 @@ def draw_min_rect(mask_image, target_image):
     contour_center = None
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > max_area:
+        if area > max_area and area > 200:
             max_area = area
             max_contour = contour
 
@@ -152,13 +179,18 @@ def draw_min_rect(mask_image, target_image):
             contour_center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
             contour_center = np.array(contour_center)
 
+            # font
+            font = cv2.FONT_HERSHEY_SIMPLEX
             # Circle for contour center
             cv2.circle(target_image, contour_center, 3, (0, 0, 255), -1)
             # Circle for rect center
             cv2.circle(target_image, rect_center, 3, (0, 255, 255), -1)
+            # text above rect center
+            cv2.putText(target_image, window_name, (rect_center[0] - 20, rect_center[1] - 20), font,
+                        0.5, (255, 0, 0), 2, cv2.LINE_AA)
 
         else:
-            cx, cy = 0, 0
+            cx, cy = None, None
     return target_image, rect_center, contour_center
 
 
@@ -171,9 +203,15 @@ def unit_vector(vector):
 
 def dot_product(p1, p2, p3):
     """ Returns 2 vectors from 3 points.  """
-    a = (p1[0] - p2[0], p1[1] - p2[1])
-    b = (p1[0] - p3[0], p1[1] - p3[1])
-    return a, b
+    if p1 is not None and p2 is not None and p3 is not None:
+        # Handle the case where either p1 or p3 is None
+        a = (p1[0] - p2[0], p1[1] - p2[1])
+        b = (p1[0] - p3[0], p1[1] - p3[1])
+        return a, b
+    else:
+        return (0, 0), (0, 0)
+
+
 
 
 def mag(x):
@@ -198,3 +236,12 @@ def angle_between_and_direcrion(v1, v2, deg=True):
             return result, distance
         else:
             return result * -1, distance
+
+def put_text_on_point(target_image, text, point, adjust):
+    if point is not None:
+        """Puts text above point"""
+        # font
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        # text above rect center
+        cv2.putText(target_image, str(text), (point[0], point[1] - adjust), font,
+                    0.5, (255, 0, 0), 2, cv2.LINE_AA)

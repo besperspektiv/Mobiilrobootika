@@ -32,7 +32,6 @@ def sendToArduino(stringToSend):
     stringWithMarkers = (startMarker)
     stringWithMarkers += stringToSend
     stringWithMarkers += (endMarker)
-
     serialPort.write(stringWithMarkers.encode('utf-8'))  # encode needed for Python3
 
 
@@ -76,25 +75,16 @@ def waitForArduino():
             print(msg)
 
 
-# ====================
-# ====================
-# the program
-
-
-
-setupSerial(115200, "COM7")
-count = 0
-prevTime = time.time()
-while True:
-    signal1 = 1200
-    signal2 = 1200
-    signal3 = 1200
+def send_signal_to_motors(signal1=1100, signal2=1200, signal3=1300):
     # check for a reply
     arduinoReply = recvLikeArduino()
     if not (arduinoReply == 'XXX'):
         print("Time %s  Reply %s" % (time.time(), arduinoReply))
+    sendToArduino(str(signal1) + "," + str(signal2) + "," + str(signal3))
 
-        # send a message at intervals
-    if time.time() - prevTime > 0.01:
-        sendToArduino(str(signal1) + "," + str(signal2) + "," + str(signal3))
+
+if __name__ == '__main__':
+    setupSerial(115200, "COM7")
+    while True:
+        send_signal_to_motors()
         prevTime = time.time()

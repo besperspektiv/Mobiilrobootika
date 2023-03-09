@@ -1,77 +1,47 @@
-import atexit
-import socket
-import time
+import math
 
-left_motor_speed = 0
-right_motor_speed = 0
+def calculate_motor_speed(target_angle, target_distance):
+    # Define proportional and derivative gains
+    k_p = 1.1
+    k_d = 0.4
+    last_error_angle = 0
+    center_value = 1500
+    max_speed = 50
+    # Define initial error values
 
-start = time.time()
-HOST = "192.168.10.128"  # The server's hostname or IP address
-PORT = 8888  # The port used by the server
+    if target_angle > math.pi:
+        target_angle -= 2*math.pi
+    elif target_angle < -math.pi:
+        target_angle += 2*math.pi
 
-def to_byte(info_to_byte):
-    to_byte = bytes(str(info_to_byte), 'utf-8')
-    print(info_to_byte)
-    return to_byte
+    # Compute proportional and derivative terms
+    p = k_p * target_angle
+    d = 1
+    print("P = " + str(p) + " ")
 
-def write_force_to_file(force_1, force_2):
-    with open('signal_left.txt', 'w') as f:
-        f.write(str(force_1))
-
-    with open('signal_right.txt', 'w') as f:
-        f.write(str(force_2))
-
-def exit_handler():
-    write_force_to_file(0, 0)
-    print('Force 0, 0')
-
-atexit.register(exit_handler)
-
-write_force_to_file(left_motor_speed, right_motor_speed)
-
-def _map(x, in_min, in_max, out_min, out_max):
-    return round((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min,2)
-
-def robot_motion(angle = 0, distance = 0):
-
-    center_value = 0
-    max_speed = 2
-
-    if angle > 2:
-        mapped_left_motor_speed  = _map(abs(angle), -180, 180, center_value, max_speed)
-        write_force_to_file(mapped_left_motor_speed, 0)
-
-        try:
-            """Send mapped_left_motor_speed via TCP"""
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((HOST, PORT))
-                s.sendall(to_byte((0 ,mapped_left_motor_speed)))
-        except Exception as e:
-            print(e)
-
-        return print(mapped_left_motor_speed, 0, angle)
-    if angle < -2:
-        mapped_right_motor_speed = _map(abs(angle), -180, 180, center_value, max_speed)
-        write_force_to_file(0, mapped_right_motor_speed)
-
-        try:
-            """Send mapped_right_motor_speed via TCP"""
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((HOST, PORT))
-                s.sendall(to_byte((mapped_right_motor_speed, 0)))
-        except Exception as e:
-            print(e)
-
-        return print(0, mapped_right_motor_speed, angle)
+    # Compute motor speeds for left and right sides of the robot
+    if target_angle > 15:
+        speed_left = center_value - p - d
+        speed_right = center_value + p + d
+    elif target_angle < -15:
+        speed_left = center_value + p + d
+        speed_right = center_value - p - d
     else:
-        write_force_to_file(0, 0)
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((HOST, PORT))
-                s.sendall(to_byte((0,0)))
-        except Exception as e:
-            print(e)
+        speed_left = center_value - p - d
+        speed_right = center_value - p - d
 
-        return print(0, 0, angle)
+    # Limit motor speeds to range of 1000-2000
+    if target_angle is not None:
+        speed_left = max(center_value - max_speed, min(center_value + max_speed, speed_left))
+        speed_right = max(center_value - max_speed, min(center_value + max_speed, speed_right))
+    else:
+        speed_left = 1500
+        speed_right = 1500
 
-    # write_force_to_file(maped_left_motor_speed, maped_right_motor_speed)
+
+
+    # Update last error angle
+    last_error_angle = target_angle
+
+    # Return motor speeds for left and right sides of the robot
+    return int(speed_left), int(speed_right)
