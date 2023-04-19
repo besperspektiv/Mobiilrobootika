@@ -8,15 +8,18 @@ import math
 
 
 def camera_init():
-    vid = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+    """352 288"""
+    vid = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     # Set camera parameters
     vid.set(cv2.CAP_PROP_FPS, 60)
     vid.set(cv2.CAP_PROP_CONTRAST, 255)  # Set contrast to 0.8
     vid.set(cv2.CAP_PROP_BRIGHTNESS, 0)  # Set brightness to 0.5
     vid.set(cv2.CAP_PROP_SATURATION, 1000)  # Set saturation to 0.6
     vid.set(cv2.CAP_PROP_HUE, 1000)  # Set hue to 0.3
-    vid.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Set width to 640
-    vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Set height to 480
+    vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # vid.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Set width to 640
+    # vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Set height to 480
     return vid
 
 
@@ -100,8 +103,8 @@ class ImageProcessor:
     def __init__(self, window_name, enemy=0):
         self.window_name = window_name
         if not enemy:
-            self.lower = np.array([0, 0, 237])
-            self.upper = np.array([207, 255, 255])
+            self.lower = np.array([96, 0, 239])
+            self.upper = np.array([255, 255, 255])
         else:
             self.lower = np.array([0, 49, 202])
             self.upper = np.array([255, 255, 255])
@@ -137,6 +140,7 @@ class ImageProcessor:
         self.create_mask()
 
     def create_mask(self):
+        kernel = np.ones((5, 5), np.uint8)
         self.hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
         self.mask = cv2.inRange(self.hsv, self.lower, self.upper)
         return self.mask
@@ -153,16 +157,16 @@ def draw_min_rect(mask_image, target_image, window_name):
 
     if len(contours) == 0:
         # No contours found, return None for all values
-        return target_image, None, None
+        return None, None
 
     # Find the contour with the maximum area
     max_area = 0
-    max_contour = None
     rect_center = None
     contour_center = None
+    max_contour = None
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > max_area and area > 200:
+        if area > max_area and area > 10:
             max_area = area
             max_contour = contour
 
@@ -173,25 +177,60 @@ def draw_min_rect(mask_image, target_image, window_name):
         rect_center = ((box[0][0] + box[2][0]) // 2, (box[0][1] + box[2][1]) // 2)
         cv2.drawContours(target_image, [box], 0, (0, 255, 0), 2)
 
-    M = cv2.moments(max_contour)
+        M = cv2.moments(max_contour)
+        for cnt in contours:
+            if M["m00"] != 0:
+                contour_center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+                contour_center = np.array(contour_center)
+
+                # font
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                # Circle for contour center
+                cv2.circle(target_image, contour_center, 3, (0, 0, 255), -1)
+                # Circle for rect center
+                cv2.circle(target_image, rect_center, 3, (0, 255, 255), -1)
+                # text above rect center
+                cv2.putText(target_image, window_name, (rect_center[0] - 20, rect_center[1] - 20), font,
+                            0.5, (255, 0, 0), 1, cv2.LINE_AA)
+    return rect_center, contour_center
+
+
+def merge_contours(target_image, mask_image):
+    contours, hierarchy = cv2.findContours(mask_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+
+    contours_combined = np.vstack(contours)
+    hull = cv2.convexHull(contours_combined)
+    cv2.drawContours(target_image, [hull], 0, (50, 50, 255), 2)
+
+    M_hull = cv2.moments(hull)
+    if M_hull["m00"] != 0:
+        contour_center_hull = (int(M_hull["m10"] / M_hull["m00"]), int(M_hull["m01"] / M_hull["m00"]))
+        return contour_center_hull
+
+def draw_connected_contours(center_points, image, max_distance):
+    for i in range(len(center_points)):
+        for j in range(i+1, len(center_points)):
+            dist = np.sqrt((center_points[i][0] - center_points[j][0])**2 + (center_points[i][1] - center_points[j][1])**2)
+            if dist <= max_distance:
+                cv2.line(image, center_points[i], center_points[j], (255, 0, 0), 2)
+
+def find_all_contours_mask(target_image, mask):
+    contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Find the center points of the contours
+    center_points = []
+
     for cnt in contours:
+        M = cv2.moments(cnt)
         if M["m00"] != 0:
-            contour_center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-            contour_center = np.array(contour_center)
+            M = cv2.moments(cnt)
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+            center_points.append((cx, cy))
 
-            # font
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            # Circle for contour center
-            cv2.circle(target_image, contour_center, 3, (0, 0, 255), -1)
-            # Circle for rect center
-            cv2.circle(target_image, rect_center, 3, (0, 255, 255), -1)
-            # text above rect center
-            cv2.putText(target_image, window_name, (rect_center[0] - 20, rect_center[1] - 20), font,
-                        0.5, (255, 0, 0), 2, cv2.LINE_AA)
-
-        else:
-            cx, cy = None, None
-    return target_image, rect_center, contour_center
+    # Draw lines between connected contours
+    draw_connected_contours(center_points, target_image, max_distance=60)
 
 
 # ----------------MATH-------------------------
@@ -212,13 +251,21 @@ def dot_product(p1, p2, p3):
         return (0, 0), (0, 0)
 
 
-
-
 def mag(x):
     return math.sqrt(sum(i ** 2 for i in x))
 
 
-def angle_between_and_direcrion(v1, v2, deg=True):
+def angle_between_and_direcrion(p1, p2, p3, deg=True):
+    """ Returns 2 vectors from 3 points.  """
+    v1 = (0, 0)
+    v2 = (0, 0)
+    if p1 is not None and p2 is not None and p3 is not None:
+        # Handle the case where either p1 or p3 is None
+        v1 = (p1[0] - p2[0], p1[1] - p2[1])
+        v2 = (p1[0] - p3[0], p1[1] - p3[1])
+    else:
+        pass
+
     """ Returns the angle in radians between vectors 'v1' and 'v2'. """
     v1_u = unit_vector(v1)
     v2_u = unit_vector(v2)
@@ -237,6 +284,7 @@ def angle_between_and_direcrion(v1, v2, deg=True):
         else:
             return result * -1, distance
 
+
 def put_text_on_point(target_image, text, point, adjust):
     if point is not None:
         """Puts text above point"""
@@ -244,4 +292,4 @@ def put_text_on_point(target_image, text, point, adjust):
         font = cv2.FONT_HERSHEY_SIMPLEX
         # text above rect center
         cv2.putText(target_image, str(text), (point[0], point[1] - adjust), font,
-                    0.5, (255, 0, 0), 2, cv2.LINE_AA)
+                    0.5, (255, 0, 0), 1, cv2.LINE_AA)

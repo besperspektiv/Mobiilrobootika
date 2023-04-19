@@ -17,7 +17,7 @@ def calculate_motor_speed(target_angle, target_distance):
     # Compute proportional and derivative terms
     p = k_p * target_angle
     d = 1
-    print("P = " + str(p) + " ")
+    # print("P = " + str(p) + " ")
 
     # Compute motor speeds for left and right sides of the robot
     if target_angle > 15:
