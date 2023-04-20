@@ -136,13 +136,17 @@ class ImageProcessor:
 
 #   PID Controller
 class PIDController:
-    def __init__(self, kp, ki, kd, min_output, max_output, loop_interval):
+    def __init__(self, kp=1.0, ki=0.0, kd=0.0, min_output=0,
+                 max_output=100, cen_pos=1500, min_motor_start_speed=10, loop_interval=0.1):
+
         self.Kp = kp
         self.Ki = ki
         self.Kd = kd
         self.min_output = min_output
         self.max_output = max_output
         self.loop_interval = loop_interval
+        self.cen_pos = cen_pos
+        self.min_motor_start_speed = min_motor_start_speed
 
         self.integral = 0
         self.prev_error = 0
@@ -178,5 +182,11 @@ class PIDController:
 
         # Update last_time variable
         self.last_time = current_time
-        self.last_output = output
-        return output
+
+        if process_variable < 0:
+            motor_speed = int(self.cen_pos + self.min_motor_start_speed + output)
+        else:
+            motor_speed = int(self.cen_pos + (self.min_motor_start_speed * -1) + output)
+
+        self.last_output = motor_speed
+        return motor_speed
