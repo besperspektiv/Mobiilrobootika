@@ -1,84 +1,77 @@
-import serial
+import numpy as np
+import cv2
+from utils import index_cameras
 import time
-import random
 
-startMarker = '<'
-endMarker = '>'
-dataStarted = False
-dataBuf = ""
-messageComplete = False
+captures = index_cameras(width=960, height=720)
 
+def update_stitching_data(frame1, frame2):
+    # create ORB feature detector
+    orb = cv2.ORB_create()
 
-# ========================
-# ========================
-# the functions
+    # detect keypoints and descriptors in the two frames
+    kp1, des1 = orb.detectAndCompute(frame1, None)
+    kp2, des2 = orb.detectAndCompute(frame2, None)
 
-def setupSerial(baudRate, serialPortName):
-    global serialPort
+    # match the keypoints in the two frames
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des1, des2)
+    matches = sorted(matches, key=lambda x: x.distance)
 
-    serialPort = serial.Serial(port=serialPortName, baudrate=baudRate, timeout=0, rtscts=True)
+    # find the homography matrix between the two images
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+    M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
 
-    print("Serial port " + serialPortName + " opened  Baudrate " + str(baudRate))
+    # stitch the two images together
+    h1, w1 = frame1.shape[:2]
+    h2, w2 = frame2.shape[:2]
+    pts1 = np.float32([[0, 0], [0, h1], [w1, h1], [w1, 0]]).reshape(-1, 1, 2)
+    pts2 = np.float32([[0, 0], [0, h2], [w2, h2], [w2, 0]]).reshape(-1, 1, 2)
+    dst_pts = cv2.perspectiveTransform(pts1, M)
+    pts = np.concatenate((pts2, dst_pts), axis=0)
+    [x_min, y_min] = np.int32(pts.min(axis=0).ravel() - 0.5)
+    [x_max, y_max] = np.int32(pts.max(axis=0).ravel() + 0.5)
+    t = [-x_min, -y_min]
+    H = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
 
-    waitForArduino()
-
-
-# ========================
-
-def sendToArduino(stringToSend):
-    # this adds the start- and end-markers before sending
-    global startMarker, endMarker, serialPort
-
-    stringWithMarkers = (startMarker)
-    stringWithMarkers += stringToSend
-    stringWithMarkers += (endMarker)
-
-    serialPort.write(stringWithMarkers.encode('utf-8'))  # encode needed for Python3
-
-
-# ==================
-
-def recvLikeArduino():
-    global startMarker, endMarker, serialPort, dataStarted, dataBuf, messageComplete
-
-    if serialPort.inWaiting() > 0 and messageComplete == False:
-        x = serialPort.read().decode("utf-8")  # decode needed for Python3
-
-        if dataStarted == True:
-            if x != endMarker:
-                dataBuf = dataBuf + x
-            else:
-                dataStarted = False
-                messageComplete = True
-        elif x == startMarker:
-            dataBuf = ''
-            dataStarted = True
-
-    if (messageComplete == True):
-        messageComplete = False
-        return dataBuf
-    else:
-        return "XXX"
-
-    # ==================
+    return H, M, x_max, x_min, y_max, y_min, t, h2, w2
 
 
-def waitForArduino():
-    # wait until the Arduino sends 'Arduino is ready' - allows time for Arduino reset
-    # it also ensures that any bytes left over from a previous message are discarded
+# Capture the first frame from both cameras
+ret1, frame1 = captures[0].read()
+ret2, frame2 = captures[1].read()
 
-    print("Waiting for Arduino to reset")
+H, M, x_max, x_min, y_max, y_min, t, h2, w2 = update_stitching_data(frame1, frame2)
+# image stitching function
+def stitch_images(frame1, frame2, H, M, x_max, x_min, y_max, y_min, t, h2, w2):
+    warped_img = cv2.warpPerspective(frame1, H.dot(M), (x_max - x_min, y_max - y_min))
+    warped_img[t[1]:h2 + t[1], t[0]:w2 + t[0]] = frame2
+    return warped_img
 
-    msg = ""
-    while msg.find("Arduino is ready") == -1:
-        msg = recvLikeArduino()
-        if not (msg == 'XXX'):
-            print(msg)
+timing = time.time()
+# Repeat the process in a while loop
+while True:
 
+    # Capture the frames from both cameras
+    ret1, frame1 = captures[0].read()
+    ret2, frame2 = captures[1].read()
 
-def send_signal_to_motors(signal1=1100, signal2=1200, signal3=1300):
-    # check for a reply
-    arduinoReply = recvLikeArduino()
-    if not (arduinoReply == 'XXX'):
-        print("Time %s  Reply %s" % (time.time(), arduinoReply))
-    sendToArduino(str(signal1) + "," + str(signal2) + "," + str(signal3))
+    if time.time() - timing > 5:
+        timing = time.time()
+        H, M, x_max, x_min, y_max, y_min, t, h2, w2 = update_stitching_data(frame1, frame2)
+
+    # stitch the frames together
+    warped_img = stitch_images(frame1, frame2,H, M, x_max, x_min, y_max, y_min, t, h2, w2)
+
+    # show the stitched image
+    cv2.imshow("Stitched Image", warped_img)
+
+    # check for key press to exit the loop
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# release the resources
+captures[0].release()
+captures[1].release()
+cv2.destroyAllWindows
