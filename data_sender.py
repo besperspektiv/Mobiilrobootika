@@ -1,6 +1,6 @@
 import serial
 import time
-import random
+import serial.tools.list_ports
 
 startMarker = '<'
 endMarker = '>'
@@ -12,8 +12,20 @@ messageComplete = False
 # ========================
 # ========================
 # the functions
+def scan_com_ports():
+    ports = serial.tools.list_ports.comports()
+    if len(ports) == 0:
+        print("No COM ports available.")
+    else:
+        for port in ports:
+            description = port.description
+        if description == "USB-SERIAL CH340 (COM17)":
+            return port.name
+        else:
+            print("Cant find correct COM port")
 
-def setupSerial(baudRate, serialPortName):
+def setupSerial(baudRate):
+    serialPortName = scan_com_ports()
     global serialPort
 
     serialPort = serial.Serial(port=serialPortName, baudrate=baudRate, timeout=0, rtscts=True)

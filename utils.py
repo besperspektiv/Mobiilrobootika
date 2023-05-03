@@ -6,8 +6,7 @@ import math
 import time
 
 
-
-def index_cameras(width = 1280, height = 720, FPS = 60):
+def index_cameras(width=1280, height=720, fps=60):
     graph = FilterGraph()
     usb_devices = graph.get_input_devices()
     print("USB devices {}".format(usb_devices))
@@ -19,11 +18,21 @@ def index_cameras(width = 1280, height = 720, FPS = 60):
 
     for j in cameras:
         video = cv2.VideoCapture(j, cv2.CAP_DSHOW)
-        video.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        video.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        video.set(cv2.CAP_PROP_BRIGHTNESS, 120)  # Set brightness to 0.5
-        video.set(cv2.CAP_PROP_FPS, FPS)
-        video.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # turn the autofocus off
+        props = {
+            cv2.CAP_PROP_FRAME_WIDTH: width,
+            cv2.CAP_PROP_FRAME_HEIGHT: height,
+            cv2.CAP_PROP_BRIGHTNESS: 94,
+            cv2.CAP_PROP_AUTOFOCUS: 0,
+            cv2.CAP_PROP_FPS: fps,
+            cv2.CAP_PROP_TRIGGER: -8,
+            cv2.CAP_PROP_FOCUS: 0,
+            cv2.CAP_PROP_SATURATION: 255,
+            cv2.CAP_PROP_SHARPNESS: 0,
+            cv2.CAP_PROP_CONTRAST: 255,
+            cv2.CAP_PROP_SETTINGS:1
+        }
+        for key, value in props.items():
+            video.set(key, value)
         success, _ = video.read()
         print("camera {} initialized {}".format(j, success))
         if not success:
@@ -34,6 +43,9 @@ def index_cameras(width = 1280, height = 720, FPS = 60):
         print("you are stupid?")
     return captures
 
+
+width = 620
+high = 480
 def camera_init(width = 620,high = 480):
     vid = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     # Set camera parameters
@@ -73,15 +85,14 @@ class MovingObjectDetector:
         largest_contour = None
         for i, contour in enumerate(contours):
             area = cv2.contourArea(contour)
-            if hierarchy[0][i][3] == -1 and area > 500:
+            if hierarchy[0][i][3] == -1 and area > 50:
                 if largest_contour is None or area > cv2.contourArea(largest_contour):
                     if xy_point is not None:
                         rect = cv2.minAreaRect(contour)
                         if cv2.rotatedRectangleIntersection(rect, (xy_point, (225, 225), 0))[0] == cv2.INTERSECT_NONE:
                             largest_contour = contour
 
-                        cv2.rectangle(image, (int(xy_point[0] - 100), int(xy_point[1] - 100)),
-                                      (int(xy_point[0]) + 100, int(xy_point[1]) + 100), (255, 50, 50), 2)
+                        cv2.circle(image, (int(xy_point[0]), int(xy_point[1])),80, (255, 50, 50), 2)
                     else:
                         largest_contour = contour
 
@@ -96,13 +107,13 @@ class MovingObjectDetector:
             return None
 
 
-def load_calib_data():
+def load_calib_data(width, height):
     # Load the camera calibration data
     calib_data = np.load('calibration_data.npz')
     mtx = calib_data['mtx']
     dist = calib_data['dist']
     # Calculate the new camera matrix
-    newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (width, high), 0, (width, high))
+    newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (width, height), 0, (width, height))
     return mtx, dist, newcameramtx, roi
 
 
@@ -120,7 +131,7 @@ def show(frame, mtx, dist, newcameramtx, roi):
 class ImageProcessor:
     def __init__(self, window_name):
         self.window_name = window_name
-        self.lower = np.array([16, 0, 238])
+        self.lower = np.array([0, 0, 188])
         self.upper = np.array([255, 255, 255])
         self.image = None
         self.mask = None

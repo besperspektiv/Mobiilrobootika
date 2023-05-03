@@ -1,58 +1,77 @@
+import numpy as np
 import cv2
+from utils import index_cameras
+import time
 
-# Initialize the cameras
-cam1 = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-cam2 = cv2.VideoCapture(2, cv2.CAP_DSHOW)
+captures = index_cameras(width=960, height=720)
 
-widh, hight = 640,380
-# Set the resolution for both cameras
-cam1.set(cv2.CAP_PROP_FRAME_WIDTH, widh)
-cam1.set(cv2.CAP_PROP_FRAME_HEIGHT, hight)
-cam1.set(cv2.CAP_PROP_BRIGHTNESS, 100)  # Set brightness to 0.5
-cam1.set(cv2.CAP_PROP_FPS, 30)
+def update_stitching_data(frame1, frame2):
+    # create ORB feature detector
+    orb = cv2.ORB_create()
 
-cam2.set(cv2.CAP_PROP_FRAME_WIDTH, widh)
-cam2.set(cv2.CAP_PROP_FRAME_HEIGHT, hight)
-cam2.set(cv2.CAP_PROP_BRIGHTNESS, 100)  # Set brightness to 0.5
-cam2.set(cv2.CAP_PROP_FPS, 30)
+    # detect keypoints and descriptors in the two frames
+    kp1, des1 = orb.detectAndCompute(frame1, None)
+    kp2, des2 = orb.detectAndCompute(frame2, None)
 
-# Capture the first frame from each camera
-_, frame1 = cam1.read()
-_, frame2 = cam2.read()
+    # match the keypoints in the two frames
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des1, des2)
+    matches = sorted(matches, key=lambda x: x.distance)
 
-# Stitch the two frames together
-stitcher = cv2.createStitcher() if cv2.__version__.startswith('3') else cv2.Stitcher.create()
-status, stitched_image = stitcher.stitch([frame1, frame2])
+    # find the homography matrix between the two images
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+    M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
 
-# If stitching was successful, display the result
-if status == cv2.STITCHER_OK:
-    cv2.imshow("Panorama", stitched_image)
-    cv2.waitKey(0)
+    # stitch the two images together
+    h1, w1 = frame1.shape[:2]
+    h2, w2 = frame2.shape[:2]
+    pts1 = np.float32([[0, 0], [0, h1], [w1, h1], [w1, 0]]).reshape(-1, 1, 2)
+    pts2 = np.float32([[0, 0], [0, h2], [w2, h2], [w2, 0]]).reshape(-1, 1, 2)
+    dst_pts = cv2.perspectiveTransform(pts1, M)
+    pts = np.concatenate((pts2, dst_pts), axis=0)
+    [x_min, y_min] = np.int32(pts.min(axis=0).ravel() - 0.5)
+    [x_max, y_max] = np.int32(pts.max(axis=0).ravel() + 0.5)
+    t = [-x_min, -y_min]
+    H = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
 
-# Loop to capture and stitch frames from the two cameras
+    return H, M, x_max, x_min, y_max, y_min, t, h2, w2
+
+
+# Capture the first frame from both cameras
+ret1, frame1 = captures[0].read()
+ret2, frame2 = captures[1].read()
+
+H, M, x_max, x_min, y_max, y_min, t, h2, w2 = update_stitching_data(frame1, frame2)
+# image stitching function
+def stitch_images(frame1, frame2, H, M, x_max, x_min, y_max, y_min, t, h2, w2):
+    warped_img = cv2.warpPerspective(frame1, H.dot(M), (x_max - x_min, y_max - y_min))
+    warped_img[t[1]:h2 + t[1], t[0]:w2 + t[0]] = frame2
+    return warped_img
+
+timing = time.time()
+# Repeat the process in a while loop
 while True:
-    # Capture a frame from each camera
-    _, frame1 = cam1.read()
-    _, frame2 = cam2.read()
 
-    # Stitch the two frames together
-    status, stitched_image = stitcher.stitch([frame1, frame2])
+    # Capture the frames from both cameras
+    ret1, frame1 = captures[0].read()
+    ret2, frame2 = captures[1].read()
 
-    # If stitching was successful, display the result
-    if status == cv2.STITCHER_OK:
-        # Apply adjustments to the panorama image here
-        # For example, you can resize the image, adjust brightness/contrast, etc.
-        stitched_image = cv2.resize(stitched_image, (640, 480))
-        stitched_image = cv2.cvtColor(stitched_image, cv2.COLOR_BGR2GRAY)
+    # if time.time() - timing > 5:
+    #     timing = time.time()
+    #     H, M, x_max, x_min, y_max, y_min, t, h2, w2 = update_stitching_data(frame1, frame2)
 
-        cv2.imshow("Panorama", stitched_image)
+    # stitch the frames together
+    warped_img = stitch_images(frame1, frame2,H, M, x_max, x_min, y_max, y_min, t, h2, w2)
 
-    # Check for key press to exit
-    key = cv2.waitKey(1)
-    if key == ord("q"):
+    # show the stitched image
+    cv2.imshow("Stitched Image", warped_img)
+
+    # check for key press to exit the loop
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Release the cameras and destroy all windows
-cam1.release()
-cam2.release()
-cv2.destroyAllWindows()
+# release the resources
+captures[0].release()
+captures[1].release()
+cv2.destroyAllWindows

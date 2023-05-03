@@ -4,9 +4,12 @@ import time
 from utils import *
 import data_sender
 
+mouse_y = 0
+mouse_x = 0
 
 def mouse_callback(event, x, y, flags, param):
-    if event == cv2.EVENT_MOUSEMOVE:
+    global mouse_y, mouse_x
+    if event == cv2.EVENT_LBUTTONDOWN:
         mouse_x, mouse_y = x, y
         print("Mouse moved at ({}, {})".format(mouse_x, mouse_y))
 
@@ -15,32 +18,37 @@ robot = ImageProcessor("Our robot")
 
 serial = 1
 try:
-    data_sender.setupSerial(115200, "COM7")
+    data_sender.setupSerial(115200)
 except:
     serial = 0
     print("cant connect to Serial port")
 
 # Load the cascade classifier
-mtx, dist, newcameramtx, roi = load_calib_data()
 vid, ret = camera_init()
-# vid = cv2.VideoCapture(1)
+vid.set(cv2.CAP_PROP_SETTINGS, 0)
+
 width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+mtx, dist, newcameramtx, roi = load_calib_data(width, height)
+
+# vid = cv2.VideoCapture(1)
 
 detector = MovingObjectDetector(learning_rate=0.1)
 
 start = time.time()
 show_image = 0
 
-max_speed_rotation = 150
-pid_rotation = PIDController(kp=2.3, ki=0.02, kd=0.45, min_output=-max_speed_rotation,
+max_speed_rotation = 255
+pid_rotation = PIDController(kp=2.1, ki=0.02, kd=0.55, min_output=-max_speed_rotation,
                              max_output=max_speed_rotation, max_integral=10)
-max_speed_movement = 100
+max_speed_movement = 300
 pid_distance = PIDController(kp=1, ki=0, kd=0.3, min_output=-max_speed_movement,
                              max_output=max_speed_movement, max_integral=0)
 
 flag = False
-
+prev_pos = (0, 0)
+prev_mouse_pos = (0, 0)
 while True:
     start = time.time()
     ret, frame = vid.read()
@@ -68,13 +76,22 @@ while True:
             x, y = centroid
         else:
             if not flag:
-                x, y = width / 2, high / 2
+                x, y = width / 2, height / 2
                 flag = True
 
         cv2.circle(frame, (int(x), int(y)), 5, (0, 0, 255), -1)
+        current_pos = (int(x), int(y))
+        if current_pos != prev_pos:
+            print("enemy_rect_center")
+            enemy_rect_center = (int(x), int(y))
+        prev_pos = current_pos
 
-        enemy_rect_center = (int(x), int(y))
-    # enemy_rect_center = (mouse_x, mouse_y)
+    current_mouse_pos = (mouse_x, mouse_y)
+    if current_mouse_pos != prev_mouse_pos:
+        enemy_rect_center = current_mouse_pos
+    prev_mouse_pos = current_mouse_pos
+
+
     a, b = dot_product(botom_point, top_point, enemy_rect_center)
     angle, distance = angle_between_and_direcrion(a, b)
 
@@ -88,13 +105,18 @@ while True:
         signal = pid_rotation.calculate(0, angle)
         signal_speed = pid_distance.calculate(0, distance)
         signal_speed = abs(signal_speed)
-
+        center_pos = 1500
         if angle < 0:
             signal = signal * -1
 
-        center_pos = 1500 + signal_speed
-        signal_left = center_pos - signal
-        signal_right = center_pos + signal
+        if abs(angle) > 80:
+            signal_left = center_pos - signal
+            signal_right = center_pos + signal
+        else:
+            signal_left = center_pos - signal + signal_speed
+            signal_right = center_pos + signal + signal_speed
+
+
 
         # print(signal_left, signal_right, txt, signal_speed)
         try:
