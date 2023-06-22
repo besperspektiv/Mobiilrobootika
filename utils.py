@@ -5,7 +5,17 @@ import numpy as np
 import math
 import time
 
+def map(value, from_low, from_high, to_low, to_high):
+    return (value - from_low) * (to_high - to_low) / (from_high - from_low) + to_low
 
+def calculate_controller_value(angle, distance, max_distance):
+    normalized_angle = angle / 180.0
+    normalized_distance = distance / max_distance
+    controller_value = normalized_angle * normalized_distance
+    return controller_value * 1
+
+
+target_camera = "c922 Pro Stream Webcam"
 def index_cameras(width=1280, height=720, fps=60):
     graph = FilterGraph()
     usb_devices = graph.get_input_devices()
@@ -13,8 +23,11 @@ def index_cameras(width=1280, height=720, fps=60):
     cameras = []
     captures = []
     for idx, i in enumerate(usb_devices):
-        if i == 'c922 Pro Stream Webcam':
+        if i == target_camera:
             cameras.append(idx)
+    else:
+        print("Target camera " + target_camera + " ist found")
+        return
 
     for j in cameras:
         video = cv2.VideoCapture(j, cv2.CAP_DSHOW)
@@ -44,19 +57,16 @@ def index_cameras(width=1280, height=720, fps=60):
     return captures
 
 
-width = 620
-high = 480
 def camera_init(width = 620,high = 480):
-    vid = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    vid = cv2.VideoCapture(2, cv2.CAP_DSHOW)
     # Set camera parameters
-    vid.set(cv2.CAP_PROP_FPS, 30)
+    vid.set(cv2.CAP_PROP_FPS, 60)
     vid.set(cv2.CAP_PROP_CONTRAST, 255)  # Set contrast to 0.8
     vid.set(cv2.CAP_PROP_BRIGHTNESS, 0)  # Set brightness to 0.5
     vid.set(cv2.CAP_PROP_SATURATION, 1000)  # Set saturation to 0.6
     vid.set(cv2.CAP_PROP_HUE, 1000)  # Set hue to 0.3
     vid.set(cv2.CAP_PROP_FRAME_WIDTH, width)  # Set width to 640
     vid.set(cv2.CAP_PROP_FRAME_HEIGHT, high)  # Set height to 480
-
     return vid, True
 
 
@@ -67,7 +77,7 @@ class MovingObjectDetector:
         self.subtractor = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
         self.learning_rate = learning_rate
 
-    def detect(self, image, xy_point=None, rect_scale=0):
+    def detect(self, image, xy_point=None):
         # Apply background subtraction to obtain the moving objects
         fgmask = self.subtractor.apply(image, learningRate=self.learning_rate)
 
@@ -85,14 +95,14 @@ class MovingObjectDetector:
         largest_contour = None
         for i, contour in enumerate(contours):
             area = cv2.contourArea(contour)
-            if hierarchy[0][i][3] == -1 and area > 50:
+            if hierarchy[0][i][3] == -1 and area > 250:
                 if largest_contour is None or area > cv2.contourArea(largest_contour):
                     if xy_point is not None:
                         rect = cv2.minAreaRect(contour)
                         if cv2.rotatedRectangleIntersection(rect, (xy_point, (225, 225), 0))[0] == cv2.INTERSECT_NONE:
                             largest_contour = contour
 
-                        cv2.circle(image, (int(xy_point[0]), int(xy_point[1])),80, (255, 50, 50), 2)
+                        cv2.circle(image, (int(xy_point[0]), int(xy_point[1])),100, (255, 50, 50), 2)
                     else:
                         largest_contour = contour
 
@@ -116,22 +126,10 @@ def load_calib_data(width, height):
     newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (width, height), 0, (width, height))
     return mtx, dist, newcameramtx, roi
 
-
-def show(frame, mtx, dist, newcameramtx, roi):
-    # Undistort the frame using the calibration data
-    mapx, mapy = cv2.initUndistortRectifyMap(mtx, dist, None, newcameramtx, (width, high), 5)
-    frame = cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
-    # crop the image
-    x, y, w, h = roi
-    frame = frame[y:y + h, x:x + w]
-
-    return frame
-
-
 class ImageProcessor:
     def __init__(self, window_name):
         self.window_name = window_name
-        self.lower = np.array([0, 0, 188])
+        self.lower = np.array([0, 0, 211])
         self.upper = np.array([255, 255, 255])
         self.image = None
         self.mask = None
@@ -217,6 +215,12 @@ def find_triangle(image, target_image):
 
 
 def find_closest_point(points):
+    """ Returns midlepoint of shortest line of triangle
+        .
+      .   .
+     .     .
+    .___o___.
+    """
     # Initialize variables for the smallest distance and the closest points
     smallest_distance = None
     closest_points = None
@@ -241,6 +245,12 @@ def find_closest_point(points):
 
 
 def find_furthest_point(points, center_point):
+    """ Returns midlepoint of shortest line of triangle
+        o
+      .   .
+     .     .
+    .       .
+    """
     furthest_point = None
     furthest_distance = None
 

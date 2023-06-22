@@ -1,3 +1,7 @@
+"""
+Have to be improved or replaced
+not in use right now
+"""
 import numpy as np
 import cv2
 from utils import index_cameras

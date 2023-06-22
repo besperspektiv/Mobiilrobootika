@@ -1,3 +1,6 @@
+"""
+Use this code to collect calibrating images for camera. camera have fisheye effect and chessboard images are used to reduce this effect.
+"""
 import cv2
 import os
 from utils import camera_init

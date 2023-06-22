@@ -1,3 +1,7 @@
+"""
+Used to send data to arduino and back
+"""
+
 import serial
 import time
 import serial.tools.list_ports
@@ -19,10 +23,9 @@ def scan_com_ports():
     else:
         for port in ports:
             description = port.description
-        if description == "USB-SERIAL CH340 (COM17)":
-            return port.name
-        else:
-            print("Cant find correct COM port")
+            if "CH340" in description:
+                return port.name
+        print("Can't find correct COM port.")
 
 def setupSerial(baudRate):
     serialPortName = scan_com_ports()
@@ -87,7 +90,7 @@ def waitForArduino():
             print(msg)
 
 
-def send_signal_to_motors(signal1=1100, signal2=1200, signal3=1300):
+def send_signal_to_motors(signal1=1500, signal2=1500, signal3=1500):
     # check for a reply
     arduinoReply = recvLikeArduino()
     if not (arduinoReply == 'XXX'):
