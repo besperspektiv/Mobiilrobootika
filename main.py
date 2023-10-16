@@ -1,6 +1,7 @@
 import cv2 as cv
 from utils import *
 import data_sender
+import Send_data_unity
 
 mouse_y = 0
 mouse_x = 0
@@ -12,23 +13,29 @@ def mouse_callback(event, x, y, flags, param):
         mouse_x, mouse_y = x, y
         print("Mouse moved at ({}, {})".format(mouse_x, mouse_y))
 
+
 robot = ImageProcessor("Our robot")
 
-serial = 1
+serial = 0
+unity = 1
 try:
     data_sender.setupSerial(115200)
 except:
     serial = 0
     print("cant connect to Serial port")
 
-# Load the cascade classifier
-# vid, ret = camera_init()
-vid = index_cameras(width=620, height=480)
-vid = vid[0]
-vid.set(cv2.CAP_PROP_SETTINGS, 0)
+if unity:
+    frame = read_owerwritted_image_from_path()
+    width, height, _ = frame.shape
+else:
+    # Load the cascade classifier
+    # vid, ret = camera_init()
+    vid = index_cameras(width=620, height=480)
+    vid = vid[0]
+    vid.set(cv2.CAP_PROP_SETTINGS, 0)
 
-width = int(vid.get(cv.CAP_PROP_FRAME_WIDTH))
-height = int(vid.get(cv.CAP_PROP_FRAME_HEIGHT))
+    width = int(vid.get(cv.CAP_PROP_FRAME_WIDTH))
+    height = int(vid.get(cv.CAP_PROP_FRAME_HEIGHT))
 
 mtx, dist, newcameramtx, roi = load_calib_data(width, height)
 
@@ -40,7 +47,7 @@ start = time.time()
 show_image = 0
 
 max_speed_rotation = 255
-pid_rotation = PIDController(kp=2, ki=0.02, kd=0.58, min_output=-max_speed_rotation,
+pid_rotation = PIDController(kp=2, ki=0.02, kd=0.6, min_output=-max_speed_rotation,
                              max_output=max_speed_rotation, max_integral=10)
 max_speed_movement = 300
 pid_distance = PIDController(kp=1, ki=0, kd=0, min_output=-max_speed_movement,
@@ -52,46 +59,58 @@ prev_mouse_pos = (0, 0)
 
 enemy_rect_center = (width / 2, height / 2)
 while True:
-    start = time.time()
-    ret, frame = vid.read()
-    # frame = cv.rotate(frame, cv.ROTATE_180)
-    # frame = show(frame, mtx, dist, newcameramtx, roi)
-    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+    try:
+        start = time.time()
+        if unity:
+            frame = read_owerwritted_image_from_path()
+        else:
+            ret, frame = vid.read()
+        # frame = cv.rotate(frame, cv.ROTATE_180)
+        # frame = show(frame, mtx, dist, newcameramtx, roi)
+        gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 
-    # find our robot
-    robot.process_image(frame)
+        # find our robot
+        robot.process_image(frame)
 
-    if not show_image:
-        mask = robot.show_image()
-    else:
-        mask = robot.create_mask()
+        if not show_image:
+            mask = robot.show_image()
+        else:
+            mask = robot.create_mask()
+    except:
+        pass
+
     try:
         botom_point, top_point = find_triangle(mask, frame)
     except:
         print("pask")
         botom_point, top_point = (0, 0), (0, 0)
+        Send_data_unity.send_data_to_unity((0, 0))
+    try:
+        if botom_point != (0, 0) and top_point != (0, 0) and botom_point != None:
+            """Enemy detection"""
+            centroid = detector.detect(frame, botom_point)
+            if centroid is not None:
+                x, y = centroid
 
-    if botom_point != (0, 0) and top_point != (0, 0) and botom_point != None:
-        """Enemy detection"""
-        centroid = detector.detect(frame, botom_point)
-        if centroid is not None:
-            x, y = centroid
-
-            cv2.circle(frame, (int(x), int(y)), 5, (0, 0, 255), -1)
-            current_pos = (int(x), int(y))
-            if current_pos != prev_pos:
-                print("enemy_rect_center")
-                enemy_rect_center = (int(x), int(y))
-            prev_pos = current_pos
+                cv2.circle(frame, (int(x), int(y)), 5, (0, 0, 255), -1)
+                current_pos = (int(x), int(y))
+                if current_pos != prev_pos:
+                    print("enemy_rect_center")
+                    enemy_rect_center = (int(x), int(y))
+                prev_pos = current_pos
+            else:
+                if not flag:
+                    x, y = width / 2, height / 2
+                    flag = True
         else:
-            if not flag:
-                x, y = width / 2, height / 2
-                flag = True
+            Send_data_unity.send_data_to_unity((0, 0))
 
-    current_mouse_pos = (mouse_x, mouse_y)
-    if current_mouse_pos != prev_mouse_pos:
-        enemy_rect_center = current_mouse_pos
-    prev_mouse_pos = current_mouse_pos
+        current_mouse_pos = (mouse_x, mouse_y)
+        if current_mouse_pos != prev_mouse_pos:
+            enemy_rect_center = current_mouse_pos
+        prev_mouse_pos = current_mouse_pos
+    except:
+        pass
 
     try:
         a, b = dot_product(botom_point, top_point, enemy_rect_center)
@@ -123,28 +142,37 @@ while True:
                 signal_right = center_pos + signal_turn + signal_speed
 
             # print(signal_left, signal_right, txt, signal_speed)
-            try:
-                if serial:
+            """Send data to Unity"""
+            if unity:
+                signal_right = map(signal_right, 1000, 2000, -6, 6)
+                signal_left = map(signal_left, 1000, 2000, -6, 6)
+                Send_data_unity.send_data_to_unity((signal_right, signal_left))
+            """Send data to Transmiter"""
+            if serial:
+                try:
                     if distance > 50:
                         data_sender.send_signal_to_motors(int(signal_right), int(signal_left))
                     else:
                         data_sender.send_signal_to_motors(1500, 1500)
-            except:
-                print("Cant send SERIAL data")
-                pass
+                except:
+                    print("Cant send SERIAL data")
+                    pass
     except:
         print("ERROR")
 
-    cv.imshow("target_image", frame)
-    cv2.setMouseCallback('target_image', mouse_callback)
+    try:
+        cv.imshow("target_image", frame)
+        cv2.setMouseCallback('target_image', mouse_callback)
 
-    if cv.waitKey(1) == ord('q'):
-        break
+        if cv.waitKey(1) == ord('q'):
+            break
 
-    if cv.waitKey(1) == ord('c') and show_image == 0:
-        show_image = 1
-        cv2.destroyWindow(robot.window_name)
-    end = time.time()
+        if cv.waitKey(1) == ord('c') and show_image == 0:
+            show_image = 1
+            cv2.destroyWindow(robot.window_name)
+        end = time.time()
+    except:
+        pass
     # print(end - start)
 vid.release()
 cv.destroyAllWindows()

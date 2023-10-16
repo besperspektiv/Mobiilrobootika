@@ -5,6 +5,15 @@ import numpy as np
 import math
 import time
 
+def read_owerwritted_image_from_path(image_path = "C:/Users/pikka/PycharmProjects/Mobiilrobootika/screenshot.png"):
+    try:
+        frame = cv2.imread(image_path)
+        return frame
+    except:
+        frame = cv2.imread(image_path)
+        return frame
+        pass
+
 def map(value, from_low, from_high, to_low, to_high):
     return (value - from_low) * (to_high - to_low) / (from_high - from_low) + to_low
 
@@ -129,8 +138,8 @@ def load_calib_data(width, height):
 class ImageProcessor:
     def __init__(self, window_name):
         self.window_name = window_name
-        self.lower = np.array([0, 0, 211])
-        self.upper = np.array([255, 255, 255])
+        self.lower = np.array([16, 94, 102])
+        self.upper = np.array([85, 255, 255])
         self.image = None
         self.mask = None
         self.hsv = None
@@ -140,7 +149,7 @@ class ImageProcessor:
         kernel = np.ones((5, 5), np.float32) / 25
         dst = cv2.filter2D(image, -1, kernel)
         blur = cv2.blur(dst, (6, 6))
-        self.image = cv2.medianBlur(blur, 5)
+        self.image = image
         self.create_mask()
         return self.image
 
@@ -182,7 +191,7 @@ def find_triangle(image, target_image):
     else:
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if 500 <= area <= 5000:
+            if 50 <= area <= 5000:
                 peri = cv2.arcLength(cnt, True)
                 approx = cv2.approxPolyDP(cnt, 0.07 * peri, True)
                 objCor = len(approx)
