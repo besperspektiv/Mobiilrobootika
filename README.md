@@ -1,6 +1,6 @@
 # Mobiilrobootika
 
-Programm starts from main.py and camera(s) and arduino module need to be connected and powerd.
+Program starts at the main.py camera(s) and Arduino module need to be connected and powered.
 
 dependencies:
   numpy==1.23.5
